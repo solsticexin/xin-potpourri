@@ -8,6 +8,6 @@ homepage = "https://github.com/solst/potpourri"
 repository = "https://github.com/solst/potpourri.git"
 license = "MIT"
 keywords = ["learning", "practice", "rust"]
-categories = ["education", "rust-patterns"]
+
 
 [dependencies]
