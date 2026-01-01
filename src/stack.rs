@@ -76,3 +76,16 @@ pub fn check_bracket(s: &str) -> bool {
     }
     stack.is_empty()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn test_check_bracket() {
+        let s = "{[()]}";
+        let result = check_bracket(s);
+        assert_eq!(result, true);
+        let s1 = "{}[()";
+        assert_eq!(check_bracket(s1), false);
+    }
+}

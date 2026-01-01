@@ -2,5 +2,12 @@
 name = "potpourri"
 version = "0.1.0"
 edition = "2024"
+authors = ["xin <solstice.xin@gmail.com>"]
+description = "A PERSONAL LEARNING PROJECT ONLY. EXTREMELY UNUSABLE. Code structure is chaotic and contains experimental implementations that are not suitable for any real use case."
+homepage = "https://github.com/solst/potpourri"
+repository = "https://github.com/solst/potpourri.git"
+license = "MIT"
+keywords = ["learning", "practice", "rust"]
+categories = ["education", "rust-patterns"]
 
 [dependencies]
