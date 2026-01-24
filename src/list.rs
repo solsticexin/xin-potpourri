@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
-/// 给定一个整数数组 nums 和一个整数目标值 target，请你在该数组中找出 和为目标值 target  的那 两个 整数，并返回它们的数组下标。
+/// 给定一个整数数组nums和一个整数目标值target，请你在该数组中找出和为目标值target的那两个整数，
+/// 并返回它们的数组下标。
 
 /// 你可以假设每种输入只会对应一个答案，并且你不能使用两次相同的元素。
 
@@ -42,11 +43,12 @@ mod tests {
         let result2 = to_sum(&nums2, target2);
         assert_eq!(result2, (1, 2));
 
-        // 测试用例 3: nums = [1, 5, 3, 7], target = 8, 期望结果 (1, 3) 或 (3, 1)
+        // 测试用例 3: nums = [1, 5, 3, 7], target = 8
+        // 可能的配对包括: 1+7=8 (索引 0,3) 或 5+3=8 (索引 1,2)
         let nums3 = vec![1, 5, 3, 7];
         let target3 = 8;
         let result3 = to_sum(&nums3, target3);
-        // 由于顺序任意，我们检查两个可能的组合
-        assert!((result3 == (1, 3)) || (result3 == (3, 1)));
+        // 由于顺序任意，我们检查所有可能的组合
+        assert!((result3 == (0, 3)) || (result3 == (3, 0)) || (result3 == (1, 2)) || (result3 == (2, 1)));
     }
 }
