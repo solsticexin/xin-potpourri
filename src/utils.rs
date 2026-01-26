@@ -1,3 +1,4 @@
+use std::fmt::Debug;
 ///该函数将方阵顺时针旋转90°
 pub fn rotate_square_matrix_cw_90(square: &mut Vec<Vec<i32>>) {
     let n = square.len();
@@ -24,15 +25,16 @@ pub fn rotate_square_matrix_cw_90(square: &mut Vec<Vec<i32>>) {
         }
     }
 }
+
+
 pub trait Visit
-where
-    Self: std::fmt::Debug,
+where Self:Debug,
 {
-    fn visit(&mut self) {
+    fn visit(&self){
         println!("打印self{:?}", self);
     }
+    fn visit_mut(&mut self);
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1,64 +1,135 @@
-///权重
-#[derive(Debug,Clone,Copy)]
-pub enum Weight {
-    ///无穷大
-    Infinity, 
-    ///权值
-    Value(i32), 
+use std::collections::VecDeque;
+use std::collections::HashSet;
+use std::hash::Hash;
+
+/// 1. 定义图的基本行为
+/// 这里的 VertexId 不再是 T，而是代表位置的“索引”
+pub trait GraphOps {
+    // 约束：ID 必须轻量 (Copy) 且能作为哈希键 (Eq + Hash)
+    // 对于 MGraph，这个类型就是 usize
+    type VertexId: Copy + Eq + Hash + From<usize> + Into<usize>;
+
+    // 算法需要知道图有多大，好创建 visited 数组
+    fn vertex_count(&self) -> usize;
+
+    // 找第一个邻居的 ID
+    fn first_neighbor(&self, x: Self::VertexId) -> Option<Self::VertexId>;
+
+    // 找下一个邻居的 ID
+    fn next_neighbor(&self, x: Self::VertexId, y: Self::VertexId) -> Option<Self::VertexId>;
 }
-///邻接矩阵表示图
-#[derive(Debug,Clone)]
-pub struct MGraph<T>{
-    pub vertex:Vec<T>, //顶点表
-    pub edge:Vec<Vec<Weight>>, //邻接矩阵
-    pub arcnum:u32, //边数
+
+/// 2. 通用 BFS 实现
+/// 只要实现了 GraphOps，就能自动获得 BFS 能力
+pub trait BFS: GraphOps {
+    fn bfs_traverse<F>(&self, start: Self::VertexId, mut visit: F)
+    where
+        F: FnMut(Self::VertexId), // 闭包接收的是 ID
+    {
+        // 如果是 usize 类型的 ID，我们可以用更快的 Vec<bool>，
+        // 但为了演示通用性，这里用 HashSet
+        let mut visited = HashSet::new();
+        let mut queue = VecDeque::new();
+
+        visit(start);
+        visited.insert(start);
+        queue.push_back(start);
+
+        while let Some(u) = queue.pop_front() {
+            let mut w_opt = self.first_neighbor(u);
+            
+            while let Some(w) = w_opt {
+                if !visited.contains(&w) {
+                    visit(w);
+                    visited.insert(w);
+                    queue.push_back(w);
+                }
+                w_opt = self.next_neighbor(u, w);
+            }
+        }
+    }
+}
+
+// 为所有满足条件的类型自动实现 BFS
+impl<G: GraphOps> BFS for G {}
+
+
+#[derive(Debug, Clone, Copy, PartialEq)] // 添加 PartialEq 以便比较
+pub enum Weight {
+    Infinity,
+    Value(i32),
+}
+
+#[derive(Debug, Clone)]
+pub struct MGraph<T> {
+    pub vertex: Vec<T>,          // 这里存复杂的 T
+    pub edge: Vec<Vec<Weight>>,  // 这里只存关系
 }
 
 impl<T> MGraph<T> {
-    ///This function creates an empty graph and needs to fill in the data by itself. 
-    /// 
-    /// A complete encapsulation function has not been designed for the time being, 
-    /// 
-    /// and the data needs to be carefully checked.
-    pub fn new()->Self{
-        Self { vertex:Vec::new(), edge:Vec::new(), arcnum:0 }
+    pub fn new() -> Self {
+        Self { vertex: Vec::new(), edge: Vec::new() }
     }
-    ///添加新的顶点
-    pub fn add_vex(&mut self,vex:T){
-        self.vertex.push(vex);
+
+    // 添加节点，返回它的 ID (usize)
+    pub fn add_node(&mut self, data: T) -> usize {
+        let id = self.vertex.len();
+        self.vertex.push(data);
+        
+        // 扩容矩阵 (简化版：每次加点都重构一下矩阵大小，实际应用要优化)
+        // 保证矩阵是 N x N
+        for row in &mut self.edge {
+            row.push(Weight::Infinity);
+        }
+        self.edge.push(vec![Weight::Infinity; id + 1]);
+        
+        id // 把 ID 给用户，就像给了个取票凭证
+    }
+
+    // 添加边 (通过 ID 操作)
+    pub fn add_edge(&mut self, start: usize, end: usize, weight: i32) {
+        if start < self.vertex.len() && end < self.vertex.len() {
+            self.edge[start][end] = Weight::Value(weight);
+            // 如果是无向图，还得加 self.edge[end][start] = ...
+        }
+    }
+    
+    // 辅助函数：通过 ID 拿数据
+    pub fn get_data(&self, id: usize) -> Option<&T> {
+        self.vertex.get(id)
     }
 }
-impl<T> FirstNeighbor for MGraph<T> {
-    type VertexId = usize;
-    fn first_neighbor(&self,x:Self::VertexId)->Option<Self::VertexId> {
-        let row=self.edge.get(x)?;
-        for (i,weight) in row.iter().enumerate() {
-            if let Weight::Value(_) = weight {
-                return Some(i)
+
+impl<T> GraphOps for MGraph<T> {
+    type VertexId = usize; // 核心：ID 就是下标
+
+    fn vertex_count(&self) -> usize {
+        self.vertex.len()
+    }
+
+    fn first_neighbor(&self, x: Self::VertexId) -> Option<Self::VertexId> {
+        // x 是 usize，直接用作数组下标，无需任何转换，O(1) 复杂度
+        if let Some(row) = self.edge.get(x) {
+            for (i, weight) in row.iter().enumerate() {
+                if let Weight::Value(_) = weight {
+                    return Some(i); // 返回找到的邻居下标
+                }
             }
         }
         None
     }
-}
-impl<T> NextNeighbor for MGraph<T> {
-    fn next_neighbor(&self, x: Self::VertexId,y:Self::VertexId) -> Option<Self::VertexId> {
-        let row=self.edge.get(x)?;
-        for (i,weight) in row.iter().enumerate().skip(y+1) {
-            if let Weight::Value(_)=weight{
-                return Some(i)
+
+    fn next_neighbor(&self, x: Self::VertexId, y: Self::VertexId) -> Option<Self::VertexId> {
+        if let Some(row) = self.edge.get(x) {
+            // 从 y+1 开始找
+            for (i, weight) in row.iter().enumerate().skip(y + 1) {
+                if let Weight::Value(_) = weight {
+                    return Some(i);
+                }
             }
         }
         None
     }
-}
-///求图顶点x的第一个邻接点
-pub trait FirstNeighbor {
-    type VertexId;
-    fn first_neighbor(&self,x:Self::VertexId)->Option<Self::VertexId>;
-}
-///求图顶点x除了y以为的第一个邻接点，y为x一个邻接点
-pub trait NextNeighbor:FirstNeighbor {
-    fn next_neighbor(&self, x: Self::VertexId,y:Self::VertexId) -> Option<Self::VertexId>;
 }
 
 #[cfg(test)]
@@ -66,132 +137,193 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_weight_enum() {
-        let infinity = Weight::Infinity;
-        let value = Weight::Value(10);
-
-        match infinity {
-            Weight::Infinity => assert!(true),
-            _ => panic!("Expected Infinity"),
-        }
-
-        match value {
-            Weight::Value(v) => assert_eq!(v, 10),
-            _ => panic!("Expected Value(10)"),
-        }
+    fn test_mgraph_add_node() {
+        let mut graph = MGraph::new();
+        
+        let id1 = graph.add_node("A");
+        let id2 = graph.add_node("B");
+        let id3 = graph.add_node("C");
+        
+        assert_eq!(id1, 0);
+        assert_eq!(id2, 1);
+        assert_eq!(id3, 2);
+        assert_eq!(graph.vertex_count(), 3);
     }
 
     #[test]
-    fn test_mgraph_creation() {
-        let graph: MGraph<i32> = MGraph::new();
+    fn test_mgraph_get_data() {
+        let mut graph = MGraph::new();
         
-        assert_eq!(graph.vertex.len(), 0);
-        assert_eq!(graph.arcnum, 0);
-        assert_eq!(graph.edge.len(), 0);
+        let id1 = graph.add_node("Node1");
+        let id2 = graph.add_node("Node2");
+        
+        assert_eq!(graph.get_data(id1), Some(&"Node1"));
+        assert_eq!(graph.get_data(id2), Some(&"Node2"));
+        assert_eq!(graph.get_data(999), None);
     }
 
     #[test]
-    fn test_add_vertex() {
-        let mut graph: MGraph<String> = MGraph::new();
+    fn test_mgraph_add_edge() {
+        let mut graph = MGraph::new();
         
-        graph.add_vex("A".to_string());
-        graph.add_vex("B".to_string());
+        let id1 = graph.add_node("A");
+        let id2 = graph.add_node("B");
+        let id3 = graph.add_node("C");
         
-        assert_eq!(graph.vertex.len(), 2);
-        assert_eq!(graph.vertex[0], "A");
-        assert_eq!(graph.vertex[1], "B");
+        graph.add_edge(id1, id2, 10);
+        graph.add_edge(id1, id3, 20);
+        graph.add_edge(id2, id3, 5);
+        
+        assert_eq!(graph.edge[id1][id2], Weight::Value(10));
+        assert_eq!(graph.edge[id1][id3], Weight::Value(20));
+        assert_eq!(graph.edge[id2][id3], Weight::Value(5));
+        assert_eq!(graph.edge[id2][id1], Weight::Infinity);
     }
 
     #[test]
-    fn test_first_neighbor_with_empty_graph() {
-        let graph: MGraph<i32> = MGraph::new();
+    fn test_graphops_vertex_count() {
+        let mut graph = MGraph::new();
         
-        // Should return None for an empty graph
-        let result = graph.first_neighbor(0);
-        assert_eq!(result, None);
+        assert_eq!(graph.vertex_count(), 0);
+        
+        graph.add_node("A");
+        graph.add_node("B");
+        
+        assert_eq!(graph.vertex_count(), 2);
     }
 
     #[test]
-    fn test_first_neighbor_with_no_edges() {
-        let mut graph: MGraph<&str> = MGraph::new();
-        graph.add_vex("A");
-        graph.add_vex("B");
-        // Initialize adjacency matrix with infinity values
-        graph.edge = vec![
-            vec![Weight::Infinity, Weight::Infinity],
-            vec![Weight::Infinity, Weight::Infinity]
-        ];
+    fn test_graphops_first_neighbor() {
+        let mut graph = MGraph::new();
         
-        let result = graph.first_neighbor(0);
-        assert_eq!(result, None);
+        let id1 = graph.add_node("A");
+        let id2 = graph.add_node("B");
+        let id3 = graph.add_node("C");
+        
+        graph.add_edge(id1, id2, 10);
+        graph.add_edge(id1, id3, 20);
+        
+        assert_eq!(graph.first_neighbor(id1), Some(id2));
+        assert_eq!(graph.first_neighbor(id2), None);
     }
 
     #[test]
-    fn test_first_neighbor_with_edge() {
-        let mut graph: MGraph<&str> = MGraph::new();
-        graph.add_vex("A");
-        graph.add_vex("B");
-        graph.add_vex("C");
-        // Initialize adjacency matrix with some edges
-        graph.edge = vec![
-            vec![Weight::Infinity, Weight::Value(5), Weight::Infinity],
-            vec![Weight::Value(3), Weight::Infinity, Weight::Value(2)],
-            vec![Weight::Infinity, Weight::Value(1), Weight::Infinity]
-        ];
+    fn test_graphops_next_neighbor() {
+        let mut graph = MGraph::new();
         
-        // First neighbor of A (index 0) should be B (index 1)
-        let result = graph.first_neighbor(0);
-        assert_eq!(result, Some(1));
+        let id1 = graph.add_node("A");
+        let id2 = graph.add_node("B");
+        let id3 = graph.add_node("C");
+        let id4 = graph.add_node("D");
         
-        // First neighbor of B (index 1) should be A (index 0)
-        let result = graph.first_neighbor(1);
-        assert_eq!(result, Some(0));
+        graph.add_edge(id1, id2, 10);
+        graph.add_edge(id1, id3, 20);
+        graph.add_edge(id1, id4, 30);
+        
+        let first = graph.first_neighbor(id1).unwrap();
+        assert_eq!(first, id2);
+        
+        let second = graph.next_neighbor(id1, first).unwrap();
+        assert_eq!(second, id3);
+        
+        let third = graph.next_neighbor(id1, second).unwrap();
+        assert_eq!(third, id4);
+        
+        let fourth = graph.next_neighbor(id1, third);
+        assert_eq!(fourth, None);
     }
 
     #[test]
-    fn test_next_neighbor() {
-        let mut graph: MGraph<&str> = MGraph::new();
-        graph.add_vex("A");
-        graph.add_vex("B");
-        graph.add_vex("C");
-        graph.add_vex("D");
-        // Initialize adjacency matrix with some edges
-        graph.edge = vec![
-            vec![Weight::Infinity, Weight::Value(5), Weight::Value(3), Weight::Value(7)],
-            vec![Weight::Value(3), Weight::Infinity, Weight::Value(2), Weight::Infinity],
-            vec![Weight::Value(4), Weight::Value(1), Weight::Infinity, Weight::Value(6)],
-            vec![Weight::Value(2), Weight::Infinity, Weight::Value(1), Weight::Infinity]
-        ];
+    fn test_bfs_traverse_simple() {
+        let mut graph = MGraph::new();
         
-        // For A (index 0), neighbors are B(1), C(2), D(3)
-        // First neighbor is B(1), next neighbor after B should be C(2)
-        let result = graph.next_neighbor(0, 1);
-        assert_eq!(result, Some(2));
+        let id0 = graph.add_node("0");
+        let id1 = graph.add_node("1");
+        let id2 = graph.add_node("2");
+        let id3 = graph.add_node("3");
         
-        // Next neighbor after C should be D
-        let result = graph.next_neighbor(0, 2);
-        assert_eq!(result, Some(3));
+        graph.add_edge(id0, id1, 1);
+        graph.add_edge(id0, id2, 1);
+        graph.add_edge(id1, id3, 1);
         
-        // After D there are no more neighbors
-        let result = graph.next_neighbor(0, 3);
-        assert_eq!(result, None);
+        let mut visited_order = Vec::new();
+        graph.bfs_traverse(id0, |id| visited_order.push(id));
+        
+        assert_eq!(visited_order, vec![id0, id1, id2, id3]);
     }
 
     #[test]
-    fn test_trait_implementations() {
-        let mut graph: MGraph<i32> = MGraph::new();
-        graph.add_vex(1);
-        graph.add_vex(2);
-        graph.edge = vec![
-            vec![Weight::Infinity, Weight::Value(10)],
-            vec![Weight::Value(10), Weight::Infinity]
-        ];
+    fn test_bfs_traverse_complex() {
+        let mut graph = MGraph::new();
         
-        // Test that the implementations satisfy the traits
-        let first_neighbor = graph.first_neighbor(0);
-        assert_eq!(first_neighbor, Some(1));
+        let id0 = graph.add_node("0");
+        let id1 = graph.add_node("1");
+        let id2 = graph.add_node("2");
+        let id3 = graph.add_node("3");
+        let id4 = graph.add_node("4");
         
-        let next_neighbor = graph.next_neighbor(0, 1);
-        assert_eq!(next_neighbor, None); // There is only one neighbor
+        graph.add_edge(id0, id1, 1);
+        graph.add_edge(id0, id2, 1);
+        graph.add_edge(id1, id3, 1);
+        graph.add_edge(id2, id4, 1);
+        
+        let mut visited_order = Vec::new();
+        graph.bfs_traverse(id0, |id| visited_order.push(id));
+        
+        assert_eq!(visited_order, vec![id0, id1, id2, id3, id4]);
+    }
+
+    #[test]
+    fn test_bfs_traverse_with_data_access() {
+        let mut graph = MGraph::new();
+        
+        let id0 = graph.add_node("Start");
+        let id1 = graph.add_node("Middle");
+        let id2 = graph.add_node("End");
+        
+        graph.add_edge(id0, id1, 1);
+        graph.add_edge(id1, id2, 1);
+        
+        let mut visited_data = Vec::new();
+        graph.bfs_traverse(id0, |id| {
+            if let Some(data) = graph.get_data(id) {
+                visited_data.push(*data);
+            }
+        });
+        
+        assert_eq!(visited_data, vec!["Start", "Middle", "End"]);
+    }
+
+    #[test]
+    fn test_weight_comparison() {
+        assert_eq!(Weight::Value(10), Weight::Value(10));
+        assert_ne!(Weight::Value(10), Weight::Value(20));
+        assert_ne!(Weight::Value(10), Weight::Infinity);
+    }
+
+    #[test]
+    fn test_empty_graph() {
+        let graph: MGraph<&str> = MGraph::new();
+        
+        assert_eq!(graph.vertex_count(), 0);
+        assert_eq!(graph.first_neighbor(0), None);
+    }
+
+    #[test]
+    fn test_disconnected_graph() {
+        let mut graph = MGraph::new();
+        
+        let id0 = graph.add_node("A");
+        let id1 = graph.add_node("B");
+        let id2 = graph.add_node("C");
+        
+        graph.add_edge(id0, id1, 1);
+        graph.add_edge(id1, id0, 1);
+        
+        let mut visited = Vec::new();
+        graph.bfs_traverse(id0, |id| visited.push(id));
+        
+        assert_eq!(visited, vec![id0, id1]);
+        assert!(!visited.contains(&id2));
     }
 }
